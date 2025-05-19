@@ -1,4 +1,4 @@
-# LLMs y sillicon sampling
+# LLMs y silicon sampling
 
 
 ## Repositorio de código
