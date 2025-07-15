@@ -5,16 +5,14 @@ import_profiles <- function(json_path) {
         # Leer JSON
         json_data <- fromJSON(json_path, simplifyVector = FALSE)
         
-        # Extraer y desanidar
         profiles_list <- lapply(names(json_data), function(profile_id) {
                 profile <- json_data[[profile_id]]
                 
                 tibble(
                         profile_id = profile_id,
                         character_profile = profile$character_profile,
-                        survey_question = profile$survey_question,
-                        think = profile$think,
-                        answ = str_trim(profile$answ),  # Limpia espacios o saltos de línea
+                        think_process = profile$think_process,
+                        survey_response = str_trim(profile$survey_response),
                         id = profile$profile_variables$id,
                         D_INTERVIEW = profile$profile_variables$D_INTERVIEW,
                         B_COUNTRY_ALPHA = profile$profile_variables$B_COUNTRY_ALPHA,
@@ -25,25 +23,73 @@ import_profiles <- function(json_path) {
                         Class_label = profile$profile_variables$Class_label,
                         Occupation_label = profile$profile_variables$Occupation_label,
                         dependiente = profile$profile_variables$dependiente,
-                        question_text = profile$profile_variables$question_text
+                        question_text = profile$profile_variables$question_text,
+                        valid_options = profile$profile_variables$valid_options
                 )
         })
         
-        # Unir todo en un solo dataframe
         bind_rows(profiles_list)
 }
 
-uru_resp <- import_profiles("./data/wvs/resp/URU_Q199_survey_simulation_results.json")
-arg_resp <- import_profiles("./data/wvs/resp/ARG_Q199_survey_simulation_results.json")
+## Importamos y apilamos las respuestas de LLM
+resp <- import_profiles(json_path='./data/wvs/resp/URY_prompt1v3_Q199_deepseek1b.json') %>%
+        bind_rows(import_profiles(json_path='./data/wvs/resp/ARG_prompt1v3_Q199_deepseek1b.json')) %>%
+        bind_rows(import_profiles(json_path='./data/wvs/resp/USA_prompt1v3_Q199_deepseek1b.json'))
 
-uru_resp  <- uru_resp  %>%
-        mutate(
-                response_extracted = str_split_i(uru_resp$response, "</think>",2)
-                )
+## Para evaluar la No respuesta
+nrs <- resp %>%
+        filter(survey_response == "[INVALID FORMAT OR UNRECOGNIZED OPTION]") 
 
-arg_resp  <- arg_resp  %>%
-        mutate(
-                response_extracted = str_split_i(arg_resp$response, "</think>",2)
+resp %>%
+        group_by(B_COUNTRY_ALPHA, survey_response) %>%
+        summarise(n=n()) %>%
+        mutate(prop = n/sum(n)) %>%
+        filter(survey_response == "[INVALID FORMAT OR UNRECOGNIZED OPTION]")
+
+## Importamos y procesamos data de WVS
+
+library(tidyverse)
+library(haven)
+
+df <- read_rds('./data/wvs/WVS_Cross-National_Wave_7_rds_v6_0.rds') %>%
+        mutate(across(c(B_COUNTRY_ALPHA, Q199), ~as_factor(.x)))
+
+## Código horrendo que genera la tabla apilada de las dos fuentes
+comp <- df %>%
+        filter(B_COUNTRY_ALPHA %in% c("URY", "ARG", "USA")) %>% # filtra los países
+        mutate(Q199 = if_else(Q199 %in% c("No answer", "Don't know"),
+                              "No data", Q199)
+        ) %>% # construye una categoría "No data"
+        filter(Q199 != "No data") %>% # filtra
+        mutate(Q199 = if_else(
+                Q199 %in% c("Not at all interested", "Not very interested"),
+                "Not interested", "Interested")) %>% # dicotomiza la variable
+        group_by(B_COUNTRY_ALPHA, Q199) %>%
+        summarise(n=n()) %>%
+        mutate(prop = n/sum(n),
+               source = "WVS") %>%
+        bind_rows(
+                resp %>%
+                        filter(survey_response != "[INVALID FORMAT OR UNRECOGNIZED OPTION]") %>%
+                        mutate(survey_response = if_else(
+                                survey_response %in% c("Not at all interested", "Not very interested"),
+                                "Not interested", "Interested")) %>%
+                        group_by(B_COUNTRY_ALPHA, survey_response) %>%
+                        summarise(n=n()) %>%
+                        mutate(prop = n/sum(n),
+                               source = "LLM Deep Seek") %>%
+                        rename(Q199 = survey_response) 
         )
+        
+        
+comp %>%
+        filter(Q199 == "Interested") %>%
+        ggplot() + 
+                geom_line(aes(x=B_COUNTRY_ALPHA, y=prop, group=source, color=source)) +
+                ylim(0,1) +
+                theme_minimal() +
+                labs(x="País",
+                     y="% rtas. 'Interesado + Algo interesado'",
+                     color="Fuente")
 
-table(arg_resp$response_extracted)
+
