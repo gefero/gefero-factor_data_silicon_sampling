@@ -32,16 +32,36 @@ import_profiles <- function(json_path) {
 }
 
 ## Importamos y apilamos las respuestas de LLM
-resp <- import_profiles(json_path='./data/wvs/resp/URY_prompt1v3_Q199_deepseek1b.json') %>%
-        bind_rows(import_profiles(json_path='./data/wvs/resp/ARG_prompt1v3_Q199_deepseek1b.json')) %>%
-        bind_rows(import_profiles(json_path='./data/wvs/resp/USA_prompt1v3_Q199_deepseek1b.json'))
+#resp <- import_profiles(json_path='./data/wvs/resp/URY_prompt1v3_Q199_deepseek1b.json') %>%
+#        bind_rows(import_profiles(json_path='./data/wvs/resp/ARG_prompt1v3_Q199_deepseek1b.json')) %>%
+#        bind_rows(import_profiles(json_path='./data/wvs/resp/USA_prompt1v3_Q199_deepseek1b.json'))
+
+
+create_tibble <- function(path="./data/wvs/resp/"){
+        resp <- tibble()
+        for (f in list.files(path, pattern=".json", full.names = TRUE)){
+                r <- import_profiles(json_path=f)
+                resp <- resp %>% bind_rows(r)
+        }
+        
+        return(resp)
+}
+
+
+resp <- create_tibble("./data/wvs/resp/")
+resp <- resp %>%
+        mutate(
+                id = str_extract(profile_id, "(?<=profile_)\\d+"),
+                llm_model = str_extract(profile_id, "(?<=_)[^_]+$")
+                ) %>%
+        select(profile_id, id, llm_model, everything())
 
 ## Para evaluar la No respuesta
 nrs <- resp %>%
         filter(survey_response == "[INVALID FORMAT OR UNRECOGNIZED OPTION]") 
 
 resp %>%
-        group_by(B_COUNTRY_ALPHA, survey_response) %>%
+        group_by(B_COUNTRY_ALPHA, llm_model, survey_response) %>%
         summarise(n=n()) %>%
         mutate(prop = n/sum(n)) %>%
         filter(survey_response == "[INVALID FORMAT OR UNRECOGNIZED OPTION]")
@@ -74,18 +94,21 @@ comp <- df %>%
                         mutate(survey_response = if_else(
                                 survey_response %in% c("Not at all interested", "Not very interested"),
                                 "Not interested", "Interested")) %>%
-                        group_by(B_COUNTRY_ALPHA, survey_response) %>%
+                        group_by(B_COUNTRY_ALPHA, llm_model, survey_response) %>%
                         summarise(n=n()) %>%
-                        mutate(prop = n/sum(n),
-                               source = "LLM Deep Seek") %>%
-                        rename(Q199 = survey_response) 
+                        mutate(prop = n/sum(n)) %>%
+                        rename(Q199 = survey_response,
+                               source = llm_model) 
         )
         
         
 comp %>%
-        filter(Q199 == "Interested") %>%
+        filter(Q199 == "Interested" ) %>%
         ggplot() + 
-                geom_line(aes(x=B_COUNTRY_ALPHA, y=prop, group=source, color=source)) +
+                geom_line(aes(x=B_COUNTRY_ALPHA, 
+                              y=prop, 
+                              group=source, 
+                              color=source)) +
                 ylim(0,1) +
                 theme_minimal() +
                 labs(x="País",
