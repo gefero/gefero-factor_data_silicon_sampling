@@ -49,6 +49,7 @@ create_tibble <- function(path="./data/wvs/resp/"){
 
 
 resp <- create_tibble("./data/wvs/resp/")
+
 resp <- resp %>%
         mutate(
                 id = str_extract(profile_id, "(?<=profile_)\\d+"),
@@ -73,6 +74,16 @@ library(haven)
 
 df <- read_rds('./data/wvs/WVS_Cross-National_Wave_7_rds_v6_0.rds') %>%
         mutate(across(c(B_COUNTRY_ALPHA, Q199), ~as_factor(.x)))
+
+
+
+df %>%
+        left_join(
+                resp %>% 
+                        select(id,llm_model, survey_response) %>%
+                        pivot_wider(names_from = llm_model,
+                                    values_from = survey_response)
+        )
 
 ## Código horrendo que genera la tabla apilada de las dos fuentes
 comp <- df %>%
