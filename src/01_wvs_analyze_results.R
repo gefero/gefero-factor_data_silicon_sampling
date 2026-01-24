@@ -53,9 +53,12 @@ resp <- create_tibble("./data/wvs/resp/")
 resp <- resp %>%
         mutate(
                 id = str_extract(profile_id, "(?<=profile_)\\d+"),
-                llm_model = str_extract(profile_id, "(?<=_)[^_]+$")
+                llm_model = str_extract(profile_id, "(?<=_)[^_]+$"),
+                llm_size = as.numeric(str_extract(llm_model,"(?<=:)(.*)(?=b)")) 
                 ) %>%
-        select(profile_id, id, llm_model, everything())
+        mutate(llm_size = if_else(llm_model=="gpt-4.1-mini", 15, llm_size)) %>%
+        select(profile_id, id, llm_model, llm_size, everything())
+
 
 ## Para evaluar la No respuesta
 nrs <- resp %>%
@@ -77,13 +80,13 @@ df <- read_rds('./data/wvs/WVS_Cross-National_Wave_7_rds_v6_0.rds') %>%
 
 
 
-df %>%
-        left_join(
-                resp %>% 
-                        select(id,llm_model, survey_response) %>%
-                        pivot_wider(names_from = llm_model,
-                                    values_from = survey_response)
-        )
+#df %>%
+#        left_join(
+#                resp %>% 
+#                        select(id,llm_model, survey_response) %>%
+#                        pivot_wider(names_from = llm_model,
+#                                    values_from = survey_response)
+#        )
 
 ## Código horrendo que genera la tabla apilada de las dos fuentes
 comp <- df %>%
@@ -105,7 +108,7 @@ comp <- df %>%
                         mutate(survey_response = if_else(
                                 survey_response %in% c("Not at all interested", "Not very interested"),
                                 "Not interested", "Interested")) %>%
-                        group_by(B_COUNTRY_ALPHA, llm_model, survey_response) %>%
+                        group_by(B_COUNTRY_ALPHA, llm_model, llm_size, survey_response) %>%
                         summarise(n=n()) %>%
                         mutate(prop = n/sum(n)) %>%
                         rename(Q199 = survey_response,
@@ -119,11 +122,13 @@ comp %>%
                 geom_line(aes(x=B_COUNTRY_ALPHA, 
                               y=prop, 
                               group=source, 
-                              color=source)) +
+                              color=llm_size)) +
+                scale_color_viridis_c() +
                 ylim(0,1) +
                 theme_minimal() +
                 labs(x="País",
                      y="% rtas. 'Interesado + Algo interesado'",
                      color="Fuente")
+                
         
 
