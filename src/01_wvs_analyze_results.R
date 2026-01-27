@@ -56,7 +56,11 @@ resp <- resp %>%
                 llm_model = str_extract(profile_id, "(?<=_)[^_]+$"),
                 llm_size = as.numeric(str_extract(llm_model,"(?<=:)(.*)(?=b)")) 
                 ) %>%
-        mutate(llm_size = if_else(llm_model=="gpt-4.1-mini", 15, llm_size)) %>%
+        mutate(llm_size = case_when(
+                llm_model == "gpt-4.1-mini"~ 15, 
+                llm_model == "gpt-4.1" ~ 176000,
+                TRUE ~ llm_size)
+               ) %>%
         select(profile_id, id, llm_model, llm_size, everything())
 
 
@@ -117,13 +121,13 @@ comp <- df %>%
         
         
 comp %>%
-        filter(Q199 == "Interested" ) %>%
+        filter(Q199 == "Interested" & source %in% c("WVS", "gpt-4.1", "qwen3:1.7b")) %>%
         ggplot() + 
                 geom_line(aes(x=B_COUNTRY_ALPHA, 
                               y=prop, 
                               group=source, 
-                              color=llm_size)) +
-                scale_color_viridis_c() +
+                              color=source)) +
+                #scale_color_viridis_c() +
                 ylim(0,1) +
                 theme_minimal() +
                 labs(x="País",
