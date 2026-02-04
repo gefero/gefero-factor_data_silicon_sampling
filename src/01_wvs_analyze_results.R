@@ -58,9 +58,15 @@ resp <- resp %>%
                 ) %>%
         mutate(llm_size = case_when(
                 llm_model == "gpt-4.1-mini"~ 15, 
+                llm_model == "gemini-2.5-flash" ~ 25,
                 llm_model == "gpt-4.1" ~ 176000,
                 TRUE ~ llm_size)
                ) %>%
+        mutate(llm_size_agg = case_when(
+                llm_size <= 10 ~ "Small",
+                llm_size > 10 & llm_size <=30 ~ "Medium",
+                llm_size > 30 ~ "Large")
+        ) %>%
         select(profile_id, id, llm_model, llm_size, everything())
 
 
@@ -121,12 +127,12 @@ comp <- df %>%
         
         
 comp %>%
-        filter(Q199 == "Interested" & source %in% c("WVS", "gpt-4.1", "qwen3:1.7b")) %>%
+        filter(Q199 == "Interested" ) %>%
         ggplot() + 
                 geom_line(aes(x=B_COUNTRY_ALPHA, 
                               y=prop, 
-                              group=source, 
-                              color=source)) +
+                              group=llm_size, 
+                              color=llm_size)) +
                 #scale_color_viridis_c() +
                 ylim(0,1) +
                 theme_minimal() +
