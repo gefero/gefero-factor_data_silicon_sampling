@@ -1,0 +1,42 @@
+---
+title: "Untitled"
+output: pdf_document
+date: "2025-07-18"
+bibliography: silicon_sampling_references.bib
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Data analysis
+
+A primary characteristic of the simulations performed is the systematic under representation of the extremes of the scales. This is particularly evident in the case of the category "Very interested" which appears as a meaningful proportion (>10%) in only one model (gemini-2.5-flash-Medium), with most models showing either complete absence or minimal presence (<5%) of this response option across all geographic contexts. 
+
+
+!["Response distribution by model and country. Each bar shows the proportion of responses in five categories: 'Very interested' (dark teal), 'Somewhat interested' (light teal), 'Not very interested' (tan), 'Not at all interested' (dark brown), and invalid formats. Models are ordered by family and size. Note the extreme concentration in qwen3-Medium (ARG: 95% dark brown) versus balanced distribution in deepseek-r1-Small. The Uruguay advantage is evident in the higher proportion of light teal ('Somewhat interested') in the middle column compared to the left column for most models."](./plots/response_by_model_size.png)
+
+
+The negative extreme of this scale -"Not at all interested"- appears as the dominant response only in qwen3-Medium (where it indicates severe mode collapse), while "Not very interested" and "Somewhat interested" serve as the preferred modal categories for most models.
+
+Three groups of models appear to be observable: models with balanced multi-category distributions (e.g., deepseek-r1-Small showing approximately 50-60% in the modal category across all countries), models with extreme concentration (e.g., qwen3-Medium displaying 95% "Not at all interested" responses in Argentina versus a more balanced 44% in the USA), and models with moderate concentration that remains stable across contexts (e.g., llama3.2-Small maintaining approximately 73-75% in "Not very interested" across all countries).
+
+Uruguay, seems to have somekind of advantage: it shows consistently higher proportions of "Somewhat interested" responses in the middle column compared to Argentina, with seven of nine models showing increased color diversity in Uruguay. 
+
+Different variability metrics confirms the previous analysis, since it reveals heterogeneity in response variability across language models and countries. Model-specific behavioral patterns emerge clearly: gpt-4.1-mini-Medium exhibits extreme response concentration across all countries (normalized entropy 0.16-0.31, modal percentages 81-93%), while deepseek-r1-Small maintains consistently high variability (entropy 0.62-0.67, effective categories 2.12-2.41). 
+
+However, significant geographic interactions complicate this picture. qwen3-Medium demonstrates dramatic cross-country behavioral shifts, operating near-deterministically in Argentina (entropy 0.14) while exhibiting the highest U.S. variability (entropy 0.66, effective categories 2.76). The Latin American samples display more pronounced bimodal distributions with clusters at behavioral extremes, whereas the U.S. sample shows smoother gradation across the variability spectrum. 
+
+These findings suggest that model response distributions reflect not merely architectural properties but complex interactions between training data composition, prompt interpretation mechanisms, and culturally-embedded survey content, raising fundamental questions about the portability of synthetic survey methodologies across demographic and linguistic boundaries.
+
+
+
+# Conclusions
+
+# Appendix
+
+Table A1: Modal Response Concentration (%) by Model and Country
+```{r, child="./tables/modal_statistcs.md", results='asis'}
+```
+

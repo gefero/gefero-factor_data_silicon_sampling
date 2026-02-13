@@ -1,5 +1,6 @@
 library(jsonlite)
 library(tidyverse)
+library(gt)
 
 import_profiles <- function(json_path) {
         # Leer JSON
@@ -47,8 +48,9 @@ create_tibble <- function(path="./data/wvs/resp/"){
         return(resp)
 }
 
-
+tictoc::tic()
 resp <- create_tibble("./data/wvs/resp/")
+tictoc::toc()
 
 resp <- resp %>%
         mutate(
@@ -65,22 +67,171 @@ resp <- resp %>%
         mutate(llm_size_agg = case_when(
                 llm_size <= 10 ~ "Small",
                 llm_size > 10 & llm_size <=30 ~ "Medium",
-                llm_size > 30 ~ "Large")
+                llm_size > 30 ~ "Large"
+                )
         ) %>%
+        mutate(llm_model = str_extract(llm_model, "^[^:]+")) %>% 
         select(profile_id, id, llm_model, llm_size, everything())
 
+## Evaluación interna
 
-## Para evaluar la No respuesta
+## No respuesta
+
 nrs <- resp %>%
         filter(survey_response == "[INVALID FORMAT OR UNRECOGNIZED OPTION]") 
 
 resp %>%
-        group_by(B_COUNTRY_ALPHA, llm_model, survey_response) %>%
+        group_by(B_COUNTRY_ALPHA, llm_model, llm_size_agg, survey_response) %>%
         summarise(n=n()) %>%
-        mutate(prop = n/sum(n)) %>%
+        mutate(prop = 100*n/sum(n)) %>%
         filter(survey_response == "[INVALID FORMAT OR UNRECOGNIZED OPTION]")
 
-## Importamos y procesamos data de WVS
+### Distribución de respuestas
+
+freqs_agg <- resp %>%
+        mutate(llm_model_size = paste(llm_model, llm_size_agg, sep = "-")) %>%
+        mutate(survey_response = if_else(
+                survey_response == "[INVALID FORMAT OR UNRECOGNIZED OPTION]",
+                "[Not valid format]",
+                survey_response
+        )) %>%
+        group_by(B_COUNTRY_ALPHA, llm_model_size, survey_response) %>%
+        summarise(n = n(), .groups = "drop_last") %>%  # Explicitly drops only last group
+        mutate(prop = 100 * n / sum(n)) %>%
+        ungroup()
+
+freqs_agg %>%
+        ggplot() + 
+        geom_col(aes(x=llm_model_size, y=prop, fill=survey_response)) +
+        theme_minimal() + 
+        scale_fill_manual(
+                values=c('#f5f5f5','#a6611a','#dfc27d','#80cdc1','#018571')
+        )+
+        coord_flip() +
+        labs(y="%", x="Model - Size", fill="Interest in politics") +
+        facet_wrap(~B_COUNTRY_ALPHA)
+
+ggsave('./paper/plots/response_by_model_size.png',
+       width = 8,
+       height = 5,
+       units = "in", # or "cm", "mm", or "px"
+       dpi = 300 
+       )
+
+variability_metrics <- freqs_agg %>%
+        group_by(B_COUNTRY_ALPHA, llm_model_size) %>%
+        mutate(
+                prop = 100 * n / sum(n),
+                prob = prop / 100  # Probability (0-1)
+        ) %>%
+        summarise(
+                # Sample information
+                total_n = sum(n),
+                n_categories = n(),
+                
+                # Entropy metrics
+                entropy = -sum(prob * log2(prob)),
+                max_entropy = log2(n_categories),
+                normalized_entropy = entropy / log2(5),
+                
+                # Diversity indices
+                simpson_diversity = 1 - sum(prob^2),
+                effective_n_categories = 1 / sum(prob^2),
+                
+                # Gini-Simpson (alternative name, same as Simpson)
+                gini_simpson = 1 - sum(prob^2),
+                
+                # Shannon diversity (entropy in nats instead of bits)
+                shannon_diversity = -sum(prob * log(prob)),
+                
+                # Concentration metrics
+                herfindahl_index = sum(prob^2),  # Inverse of Simpson
+                concentration_ratio = max(prob),  # Largest proportion
+                
+                # Modal category information
+                modal_response = survey_response[which.max(prop)],
+                modal_pct = max(prop),
+                
+                # Distribution spread
+                prop_sd = sd(prop),
+                prop_cv = sd(prop) / mean(prop) * 100,  # Coefficient of variation
+                
+                # Inverse participation ratio (physics measure)
+                ipr = 1 / sum(prob^4),
+                
+                .groups = "drop"
+        ) %>%
+        arrange(B_COUNTRY_ALPHA, llm_model_size)
+
+
+variability_metrics %>% 
+        select(B_COUNTRY_ALPHA:n_categories,
+               normalized_entropy:effective_n_categories, 
+               modal_pct, modal_response) %>%
+        select(-total_n) %>%
+        rename(Country = B_COUNTRY_ALPHA,
+               `Total categories` = n_categories,
+               `Model and size` = llm_model_size,
+               `Norm. entropy` = normalized_entropy,
+               `Simpson diversity` = simpson_diversity,
+               `Effect. number of categories` = effective_n_categories,
+               `Modal cat. percent.` = modal_pct,
+               `Modal response` = modal_response)
+
+variability_metrics %>% 
+        select(B_COUNTRY_ALPHA,llm_model_size,
+               normalized_entropy) %>%
+        rename(Country = B_COUNTRY_ALPHA,
+               `Model and size` = llm_model_size,
+               `Norm. entropy` = normalized_entropy) %>%
+        pivot_wider(
+                names_from = Country,
+                values_from = `Norm. entropy`
+                ) %>%
+        rowwise() %>% 
+        mutate(Range = max(c_across(c(ARG,URY,USA)), na.rm = TRUE) 
+               - min(c_across(c(ARG,URY,USA)), na.rm = TRUE)) %>%
+        ungroup() %>%
+        knitr::kable(digits=2) %>%
+        writeLines('./paper/tables/norm_entropy.md')
+
+variability_metrics %>% 
+        select(B_COUNTRY_ALPHA,llm_model_size,
+               effective_n_categories) %>%
+        rename(Country = B_COUNTRY_ALPHA,
+               `Model and size` = llm_model_size,
+               `Effect. no. of categories` = effective_n_categories) %>%
+        pivot_wider(
+                names_from = Country,
+                values_from = `Effect. no. of categories`
+        ) %>%
+        knitr::kable(digits=2) %>%
+        writeLines('./paper/tables/eff_no_categories.md')
+
+variability_metrics %>% 
+        select(B_COUNTRY_ALPHA,llm_model_size,
+               modal_pct, modal_response) %>%
+        rename(Country = B_COUNTRY_ALPHA,
+               `Model and size` = llm_model_size,
+               `Modal cat. percent.` = modal_pct,
+               `Modal response` = modal_response) %>%
+        pivot_wider(
+                names_from = Country,
+                values_from = c(`Modal cat. percent.`,
+                                `Modal response`)
+        ) %>%
+        knitr::kable(digits=2) %>%
+        writeLines('./paper/tables/modal_statistcs.md')
+
+
+
+
+
+
+
+
+
+
 
 library(tidyverse)
 library(haven)
@@ -118,7 +269,7 @@ comp <- df %>%
                         mutate(survey_response = if_else(
                                 survey_response %in% c("Not at all interested", "Not very interested"),
                                 "Not interested", "Interested")) %>%
-                        group_by(B_COUNTRY_ALPHA, llm_model, llm_size, survey_response) %>%
+                        group_by(B_COUNTRY_ALPHA, llm_model, llm_size, llm_size_agg, survey_response) %>%
                         summarise(n=n()) %>%
                         mutate(prop = n/sum(n)) %>%
                         rename(Q199 = survey_response,
@@ -130,9 +281,9 @@ comp %>%
         filter(Q199 == "Interested" ) %>%
         ggplot() + 
                 geom_line(aes(x=B_COUNTRY_ALPHA, 
-                              y=prop, 
-                              group=llm_size, 
-                              color=llm_size)) +
+                              y=mean(prop), 
+                              group=llm_model, 
+                              color=llm_size_agg)) +
                 #scale_color_viridis_c() +
                 ylim(0,1) +
                 theme_minimal() +
