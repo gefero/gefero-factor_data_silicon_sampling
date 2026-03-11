@@ -74,9 +74,7 @@ resp <- resp %>%
         select(profile_id, id, llm_model, llm_size, everything())
 
 ## Evaluación interna
-
 ## No respuesta
-
 nrs <- resp %>%
         filter(survey_response == "[INVALID FORMAT OR UNRECOGNIZED OPTION]") 
 
@@ -163,7 +161,6 @@ variability_metrics <- freqs_agg %>%
         ) %>%
         arrange(B_COUNTRY_ALPHA, llm_model_size)
 
-
 variability_metrics %>% 
         select(B_COUNTRY_ALPHA:n_categories,
                normalized_entropy:effective_n_categories, 
@@ -236,12 +233,26 @@ variability_metrics %>%
 library(tidyverse)
 library(haven)
 
-df <- read_rds('./data/wvs/WVS_Cross-National_Wave_7_rds_v6_0.rds') %>%
-        mutate(across(c(B_COUNTRY_ALPHA, Q199), ~as_factor(.x)))
+df <- read_rds('./data/wvs/WVS_Cross-National_Wave_7_rds_v6_0.rds')
+
+knitr::kable(df %>%
+        mutate(Q199 = as.character(haven::as_factor(Q199))) %>%
+        filter(B_COUNTRY_ALPHA %in% c("URY", "ARG", "USA")) %>%
+        filter(!Q199 %in% c("Don't know","No answer")) %>%
+        group_by(B_COUNTRY_ALPHA, Q199) %>%
+        summarise(n_w=sum(pwght)) %>%
+        mutate(prop = n_w/sum(n_w),
+               source = "WVS") %>%
+        select(-n_w, -source) %>%
+        pivot_wider(
+                names_from = B_COUNTRY_ALPHA,
+                values_from = prop,
+                values_fill = 0
+        ))
 
 
 
-#df %>%
+a#df %>%
 #        left_join(
 #                resp %>% 
 #                        select(id,llm_model, survey_response) %>%
