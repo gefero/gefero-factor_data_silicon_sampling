@@ -120,15 +120,15 @@ This procedure produces a dataset of synthetic responses associated with defined
 
 ### 4.4 Analytical strategy
 
-To evaluate the performance of silicon sampling, we compare synthetic and observed survey responses along three complementary analytical dimensions: aggregate correspondence, cross-national ordering, and sociodemographic structure.
+Para evaluar el desempeño del silicon sampling, comparamos las respuestas sintéticas con las observadas en la encuesta a lo largo de tres dimensiones analíticas: correspondencia agregada, diferencias entre países y estructura sociodemográfica.
 
-First, we examine aggregate correspondence by comparing the overall distribution of synthetic responses with the empirical distribution observed in the WVS. This comparison allows us to assess whether language models reproduce the general shape of the response distribution or instead concentrate responses in particular categories.
+En primer lugar, se examina la correspondencia agregada comparando la distribución general de las respuestas sintéticas con la distribución empírica observada en la WVS. Esta comparación permite evaluar si los modelos reproducen la forma general de la distribución de respuestas o si, por el contrario, concentran las respuestas en categorías particulares.
 
-Second, we analyze cross-national differences by examining whether models reproduce the relative ordering of countries in terms of political interest. This comparison evaluates whether synthetic responses capture meaningful variation across national contexts rather than simply approximating a global distribution.
+En segundo lugar, se analizan las diferencias centre países examinando si los modelos capturan variación sistemática entre países en términos de interés político, tanto en los niveles generales de respuesta como en la sensibilidad de cada modelo al contexto nacional especificado en la instrucción.
 
-Third, we examine sociodemographic structure by analyzing whether synthetic responses vary systematically across key social attributes such as age, education, occupation, and subjective class. This constitutes a more demanding test of silicon sampling, since it evaluates whether models reproduce the patterned internal differentiation commonly observed in survey data.
+En tercer lugar, examinamos la estructura sociodemográfica analizando si las respuestas sintéticas varían sistemáticamente según atributos sociales clave como la edad, la educación, el sexo y la clase social. Esto permite evaluar si los modelos reproducen las diferencias internas que típicamente se observa en los datos de opinión pública.
 
-Together, these analytical dimensions allow us to distinguish between models that approximate aggregate response frequencies and those that also reproduce the relational and structural properties of observed public opinion data.
+En conjunto, estas tres dimensiones permiten distinguir entre modelos que aproximan las frecuencias de respuesta agregadas y aquellos que también reproducen las propiedades relacionales y estructurales de los datos reales.
 
 ## 5. Results
 
