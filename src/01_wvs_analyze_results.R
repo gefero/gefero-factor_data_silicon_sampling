@@ -1,6 +1,11 @@
 library(jsonlite)
 library(tidyverse)
 library(gt)
+library(effectsize)
+library(effectsize)
+library(broom)
+library(purrr)
+library(knitr)
 
 import_profiles <- function(json_path) {
         # Leer JSON
@@ -31,11 +36,6 @@ import_profiles <- function(json_path) {
         
         bind_rows(profiles_list)
 }
-
-## Importamos y apilamos las respuestas de LLM
-#resp <- import_profiles(json_path='./data/wvs/resp/URY_prompt1v3_Q199_deepseek1b.json') %>%
-#        bind_rows(import_profiles(json_path='./data/wvs/resp/ARG_prompt1v3_Q199_deepseek1b.json')) %>%
-#        bind_rows(import_profiles(json_path='./data/wvs/resp/USA_prompt1v3_Q199_deepseek1b.json'))
 
 
 create_tibble <- function(path="./data/wvs/resp/"){
@@ -223,6 +223,310 @@ variability_metrics %>%
 
 
 
+#5.1 - error absoluto medio entre WVS y silicon sampling
+
+wvs_freq <- resp %>%
+        group_by(B_COUNTRY_ALPHA, survey_response) %>%
+        summarise(n=n()) %>%
+        mutate(prop_real = n/sum(n))
+
+llm_freq <- freqs_agg %>%
+        mutate(prop_llm = prop/100)
+
+aggregate_mae <- llm_freq %>%
+        left_join(wvs_freq, by=c("B_COUNTRY_ALPHA","survey_response")) %>%
+        group_by(llm_model_size, B_COUNTRY_ALPHA) %>%
+        summarise(
+                MAE = mean(abs(prop_llm - prop_real), na.rm=TRUE)
+        )
+
+
+aggregate_mae_plot <- aggregate_mae %>%
+        group_by(llm_model_size) %>%
+        mutate(mae_mean_model = mean(MAE, na.rm = TRUE)) %>%
+        ungroup() %>%
+        mutate(
+                llm_model_size = fct_reorder(llm_model_size, mae_mean_model, .desc = TRUE)
+        )
+
+ggplot(aggregate_mae_plot,
+                aes(x = MAE, y = llm_model_size, color = B_COUNTRY_ALPHA)) +
+        geom_point(size = 3, alpha = 0.9, position = position_dodge(width = 0.4)) +
+        scale_color_manual(
+                values=c('#a6611a','#dfc27d','#80cdc1','#018571')
+        )+
+        labs(
+                x = "MAE",
+                y = "Model - Size",
+                color = "Country"
+        ) +  theme_minimal(base_size = 12)
+
+
+ggsave(
+        "./paper/plots/mae_by_model_country.png",
+        width = 8,
+        height = 5,
+        units = "in",
+        dpi = 300
+)
+
+
+
+##tabla modelos 4.3: 
+##agrega tipo
+
+
+resp %>% 
+        distinct(llm_model, llm_size, llm_size_agg) %>%
+        arrange(llm_size) %>%
+        mutate(
+                model_type = case_when(
+                        llm_model %in% c("gpt-4.1", "gpt-4.1-mini", "gemini-2.5-flash") ~ "Proprietary",
+                        TRUE ~ "Open-weight"
+                ),
+                llm_model = case_when(
+                        llm_model == "deepseek-r1" ~ "DeepSeek-R1",
+                        llm_model == "llama3.1" ~ "Llama 3.1",
+                        llm_model == "qwen3" ~ "Qwen 3",
+                        llm_model == "gpt-4.1-mini" ~ "GPT-4.1 Mini",
+                        llm_model == "gemini-2.5-flash" ~ "Gemini 2.5 Flash",
+                        llm_model == "gpt-4.1" ~ "GPT-4.1",
+                        TRUE ~ llm_model
+                ),
+                llm_size = case_when(
+                        llm_model == "GPT-4.1" ~ "~175B",
+                        llm_model == "GPT-4.1 Mini" ~ "~15B",
+                        llm_model == "Gemini 2.5 Flash" ~ "~25B",
+                        TRUE ~ paste0(llm_size, "B")
+                )
+        ) %>%
+        rename(
+                Model = llm_model,
+                `Model size` = llm_size,
+                Category = llm_size_agg,
+                Type = model_type
+        ) %>%
+        select(Model, Type, `Model size`, Category) %>%
+        knitr::kable(
+                caption = "Large language models used in the analysis, model type, approximate parameter size, and size category."
+        ) %>%
+        writeLines("./paper/tables/models_table.md")
+
+
+
+##5.2 subgrupos
+
+## Dicotómico
+
+#LLMs
+
+resp <- resp %>%
+        mutate(
+                interesado = case_when(
+                        survey_response %in% c("Very interested", "Somewhat interested") ~ 1,
+                        survey_response %in% c("Not very interested", "Not at all interested") ~ 0,
+                        TRUE ~ NA_real_  # excluye INVALID FORMAT
+                )
+        )
+
+#WVS
+wvs <- df %>%
+        filter(B_COUNTRY_ALPHA %in% c("ARG", "URY", "USA")) %>%
+        mutate(
+                interesado = case_when(
+                        Q199 %in% c("Very interested", "Somewhat interested") ~ 1,
+                        Q199 %in% c("Not very interested", "Not at all interested") ~ 0,
+                        TRUE ~ NA_real_
+                )
+        )
+
+
+# Proporciones desde WVS
+
+wvs_prop <- wvs %>%
+        filter(!is.na(interesado)) %>%
+        group_by(B_COUNTRY_ALPHA) %>%
+        summarise(prop_real = mean(interesado))
+
+llm_prop <- resp %>%
+        filter(!is.na(interesado)) %>%
+        group_by(llm_model, llm_size_agg, B_COUNTRY_ALPHA) %>%
+        summarise(prop_llm = mean(interesado), .groups = "drop")
+
+# MAE 
+mae_corrected <- llm_prop %>%
+        left_join(wvs_prop, by = "B_COUNTRY_ALPHA") %>%
+        mutate(
+                MAE = abs(prop_llm - prop_real),
+                llm_model_size = paste(llm_model, llm_size_agg, sep = "-")
+        )
+
+
+
+ggplot(mae_corrected,
+       aes(x = MAE, y = llm_model_size, color = B_COUNTRY_ALPHA)) +
+        geom_point(size = 3, alpha = 0.9, position = position_dodge(width = 0.4)) +
+        scale_color_manual(
+                values=c('#a6611a','#dfc27d','#80cdc1','#018571')
+        )+
+        labs(
+                x = "MAE",
+                y = "Model - Size",
+                color = "Country"
+        ) +  theme_minimal(base_size = 12)
+
+
+ggsave(
+        "./paper/plots/mae_by_model_country.png",
+        width = 8,
+        height = 5,
+        units = "in",
+        dpi = 300
+)
+
+
+
+
+wvs_clean <- df %>%
+        filter(B_COUNTRY_ALPHA %in% c("ARG", "URY", "USA")) %>%
+        mutate(
+                interesado = case_when(
+                        as.character(Q199) %in% c("Very interested", "Somewhat interested") ~ 1,
+                        as.character(Q199) %in% c("Not very interested", "Not at all interested") ~ 0,
+                        TRUE ~ NA_real_
+                ),
+                edad = as.numeric(Q262),
+                sexo = as.numeric(Q260),
+                educacion = as.numeric(Q275),
+                clase = as.numeric(Q287),
+                pais = as.character(B_COUNTRY_ALPHA)
+        ) %>%
+        filter(!is.na(interesado))%>% select(B_COUNTRY_ALPHA,interesado,edad,sexo,
+                                             educacion , clase, pais)
+
+
+# Regresión WVS
+
+modelo_base <- function(pais) {
+        wvs_clean %>%
+                filter(pais == !!pais) %>%
+                glm(interesado ~ edad + sexo + educacion + clase,
+                    data = ., family = binomial) %>%
+                tidy(conf.int = TRUE) %>%
+                mutate(country = pais, fuente = "WVS")
+}
+
+base_results <- map_dfr(c("ARG", "URY", "USA"), modelo_base)
+
+
+#LLMs
+
+resp_clean <- resp %>%
+        mutate(
+                interesado = case_when(
+                        survey_response %in% c("Very interested", "Somewhat interested") ~ 1,
+                        survey_response %in% c("Not very interested", "Not at all interested") ~ 0,
+                        TRUE ~ NA_real_
+                ),
+                edad = as.numeric(Age),
+                # Recodificar para que coincidan las escalas con WVS
+                sexo = case_when(
+                        Sex_label == "man"   ~ 1,
+                        Sex_label == "woman" ~ 2,
+                        TRUE ~ NA_real_
+                ),
+                educacion = case_when(
+                        Education_label == "low education"            ~ 1,
+                        Education_label == "secondary education"      ~ 2,
+                        Education_label == "higher education"         ~ 3,
+                        Education_label == "postgraduate education"   ~ 4,
+                        Education_label == "unspecified education"    ~ NA_real_,
+                        TRUE ~ NA_real_
+                ),
+                clase = case_when(
+                        Class_label == "lower class"        ~ 1,
+                        Class_label == "working class"      ~ 2,
+                        Class_label == "lower middle class" ~ 3,
+                        Class_label == "upper middle class" ~ 4,
+                        Class_label == "upper class"        ~ 5,
+                        TRUE ~ NA_real_
+                ),
+                pais = B_COUNTRY_ALPHA,
+                llm_model_size = paste(llm_model, llm_size_agg, sep = "-")
+        ) %>%
+        filter(!is.na(interesado))
+
+
+# Regresión llmS
+
+
+modelos_llm <- resp_clean %>%
+        group_by(llm_model_size, pais) %>%
+        group_modify(~ {
+                tryCatch(
+                        glm(interesado ~ edad + sexo + educacion + clase,
+                            data = .x, family = binomial) %>%
+                                tidy(conf.int = TRUE),
+                        error = function(e) tibble()  # si algún modelo falla, skip
+                )
+        }) %>%
+        ungroup() %>%
+        rename(country = pais) %>%
+        mutate(fuente = llm_model_size)
+
+
+coef_all <- bind_rows(
+        base_results %>% 
+                mutate(llm_model_size = "WVS"),  
+        modelos_llm %>% 
+                mutate(llm_model_size = fuente)
+) %>%
+        filter(term != "(Intercept)") %>%
+        mutate(
+                term = recode(term,
+                              "edad"      = "Age",
+                              "sexo"      = "Sex",
+                              "educacion" = "Education",
+                              "clase"     = "Social class"
+                ),
+                es_wvs = fuente == "WVS"  
+        )
+
+coef_all_filtered <- coef_all %>%
+        filter(abs(estimate) < 10,
+               abs(conf.high - conf.low) < 20)
+
+coef_all %>% select(fuente, es_wvs) %>% distinct() %>% print(n=20)
+
+#Gráfico
+
+ggplot(coef_all_filtered, aes(x = estimate, y = llm_model_size, 
+                              color = es_wvs, alpha = es_wvs)) +
+        geom_point(size = 2.5) +
+        geom_errorbarh(aes(xmin = conf.low, xmax = conf.high), height = 0.2) +
+        geom_vline(xintercept = 0, linetype = "dashed", color = "gray40") +
+        facet_grid(term ~ country, scales = "free_x") +
+        scale_color_manual(values = c("FALSE" = "gray60", "TRUE" = "#018571"),
+                           labels = c("FALSE" = "LLMs", "TRUE" = "WVS")) +
+        coord_cartesian(xlim = c(-3, 3))+
+        scale_alpha_manual(values = c(0.5, 1), guide = "none") +
+        labs(x = "Coef (log-odds)", y = NULL, color = NULL)
+theme_minimal(base_size = 11) +
+        theme(legend.position = "bottom",
+              strip.text = element_text(face = "bold"))
+
+
+ggsave(
+        "./paper/plots/regresion_model_country.png",
+        width = 12,
+        height = 10,
+        units = "in",
+        dpi = 300
+)
+
+
+
+
 
 
 
@@ -250,7 +554,11 @@ knitr::kable(df %>%
                 values_fill = 0
         ))
 
-
+df %>% 
+        filter(B_COUNTRY_ALPHA %in% c("ARG", "URY", "USA")) %>%
+        select(B_COUNTRY_ALPHA, Q199, starts_with("Q260"), starts_with("Q262"), 
+               starts_with("Q275"), starts_with("Q287"), starts_with("Q288")) %>%
+        head(3)
 
 a#df %>%
 #        left_join(
@@ -259,6 +567,7 @@ a#df %>%
 #                        pivot_wider(names_from = llm_model,
 #                                    values_from = survey_response)
 #        )
+
 
 ## Código horrendo que genera la tabla apilada de las dos fuentes
 comp <- df %>%
@@ -303,4 +612,5 @@ comp %>%
                      color="Fuente")
                 
         
+
 
