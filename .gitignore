@@ -1,6 +1,8 @@
 # Specific folders
 ./data/vci/*.zip
 ./data/latinobarometro/*.zip
+./data/maybe
+./biblio/maybe
 
 # History files
 .Rhistory
