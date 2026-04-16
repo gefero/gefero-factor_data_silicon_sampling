@@ -2,7 +2,7 @@
 title: "Untitled"
 output: pdf_document
 date: "2025-07-18"
-bibliography: references.bib
+bibliography: silicon_sampling_references.bib
 ---
 
 ```{r setup, include=FALSE}
