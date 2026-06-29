@@ -1,6 +1,6 @@
 # Specific folders
-./data/vci/*.zip
-./data/latinobarometro/*.zip
+./political_interest/data/vci/*.zip
+./political_interest/data/latinobarometro/*.zip
 maybe/
 migracion/
 
